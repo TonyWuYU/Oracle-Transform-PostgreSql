@@ -1,0 +1,18 @@
+CREATE OR REPLACE 
+FUNCTION F_GET_SESSION_SETTLE_PRICE 
+(
+  p_userid IN VARCHAR2 
+, p_openid IN VARCHAR2 
+) RETURN NUMBER
+is
+       settle_price number;
+BEGIN
+
+	select amount into settle_price from (
+		select t.amount from o2o_trans_req t join o2o_session_open_log l on l.po_tran_no=t.po_trans_no
+		where l.log_user_id=p_userid and l.open_id=p_openid
+		 and l.status='YYD' order by l.log_time desc
+	) where rownum=1;
+	
+  RETURN settle_price;
+END F_GET_SESSION_SETTLE_PRICE;

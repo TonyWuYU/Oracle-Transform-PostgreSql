@@ -1,0 +1,107 @@
+CREATE OR REPLACE 
+function f_get_vip_price(av_user_id varchar2,av_open_id varchar2,av_reserve_way varchar2)
+       return number
+is
+       lv_discount_value number;--优惠值
+       lv_discount_cal varchar2(10);--优惠方法
+       lv_comm_id varchar2(32);--社区id
+       lv_class_id varchar2(32);--会员等级id
+       lv_list_price number;--挂牌价
+       lv_reserve_discount number;--预约渠道优惠方式
+       lv_project_id varchar(32);
+       lv_cata_id varchar(32);
+       lv_time_id varchar(32);
+       lv_vip_price number;--会员等级价格
+       
+begin
+
+        begin
+          select a.comm_id,a.list_price,a.project_id,a.cata_id,a.time_id
+          into
+                 lv_comm_id,lv_list_price,lv_project_id,lv_cata_id,lv_time_id
+          from  v_session_open a
+          where a.open_id=av_open_id;
+          
+      EXCEPTION
+      WHEN NO_DATA_FOUND
+      THEN
+          return 0;
+      end;
+      
+    
+      
+      --项目预约渠道优惠 
+	  begin
+		  select r.discount into lv_reserve_discount
+		  from o2o_venue_project_reserve r where r.project_id=lv_project_id
+		  and r.reserve_way=av_reserve_way;
+      EXCEPTION
+      WHEN NO_DATA_FOUND
+      THEN
+          return lv_list_price;
+      end;
+      
+      --查询是否为会员
+     begin
+       select a.class_id into lv_class_id from O2O_VIP_AUTH a
+       where v3_user_id=av_user_id and a.comm_id=lv_comm_id and a.status='ZC' ;
+       
+     exception
+       when others
+       then
+         return lv_list_price;
+     end ;
+
+     if lv_class_id is null  --是否为会员
+        then
+        return lv_list_price;
+     else
+         begin  --会员等级价格
+           select b.list_unit_price into lv_vip_price from O2O_PROJECT_VIP_PRICE b  
+           where lv_comm_id=b.comm_id  and lv_cata_id=b.cata_id and lv_time_id=b.time_id
+           and b.class_id =lv_class_id;             
+         exception
+           when others
+           then
+             return lv_list_price;
+         end ;  
+     
+         lv_list_price:= lv_vip_price ;
+     END IF;
+      
+      
+      
+      
+      --会员优惠值          
+      begin
+       select b.discount_cal,b.discount_value
+       into lv_discount_cal,lv_discount_value
+       from  O2O_COMM_OWNER_CLASS  b where lv_class_id=b.class_id and lv_comm_id=b.comm_id
+       ;
+       
+     exception
+       when others
+       then
+         return lv_list_price;
+     end ;
+
+     if  lv_discount_cal='WYH' -- 是否有优惠
+        then
+        return lv_list_price;
+     else
+       lv_list_price:= ceil(lv_discount_value*lv_list_price) ;
+     END IF;
+
+      if lv_reserve_discount<0 --负数表示减金额
+         then
+         return lv_list_price+ lv_reserve_discount;
+      else
+         return lv_list_price; 
+      end if;
+    
+       
+EXCEPTION
+   WHEN OTHERS
+   THEN
+      RAISE;
+END f_get_vip_price;

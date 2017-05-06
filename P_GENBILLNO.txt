@@ -1,0 +1,129 @@
+CREATE OR REPLACE 
+PROCEDURE P_GENBILLNO (
+  as_BusinessId   in   SYS_BILL.BUSINESS_ID%TYPE,
+  ai_billnos   in   integer,
+  as_billno out    varchar2
+) is
+
+  li_ret  integer;
+  ls_msg  varchar2(100);
+  ls_Flag char(1);
+  ldt_DateOfMaxNo date;
+  li_startpos  integer;
+  li_endpos  integer;
+  ls_DisplayFormat  varchar2(30);
+  ls_NoFormat varchar2(30);
+  ls_MinFlowNo  varchar2(30);
+  ls_MaxFlowNo  varchar2(30);
+  li_length  integer;
+  li_StepLength integer;
+  e_err    exception;
+begin
+  -- ???????
+  li_ret := 0;
+  if (ai_billnos <= 0) then
+      begin
+        as_billno := '';
+        li_ret := -1;
+        ls_msg := '??????!';
+        raise e_err;
+      end;
+  end if;
+
+  -- ???
+  update SYS_BILL
+  set LOCKID = CASE WHEN nvl(LOCKID,0) > 65536 THEN 0 ELSE nvl(LOCKID,0) + 1 END
+  where BUSINESS_ID = as_BusinessId ;
+  if sql%rowcount = 0 then
+    update SYS_BILL
+    set LOCKID = CASE WHEN nvl(LOCKID,0) > 65536 THEN 0 ELSE nvl(LOCKID,0) + 1 END
+    where BUSINESS_ID = as_BusinessId ;
+    if sql%rowcount = 0 then
+      as_billno := '';
+      li_ret := -2;
+      ls_msg := '????????!';
+      raise e_err;
+    end if;
+  end if;
+
+  --commit;
+
+  -- ?????????
+  select
+    nvl(MAX_BILL_NO,'000'),              nvl(DISPLAY_FORMAT,'{000000}'),
+    nvl(DATE_OF_MAX_NO,to_date(null)),    nvl(STEP_LENGTH,1),      nvl(Flag,'1')
+  into
+    ls_MaxFlowNo,           ls_DisplayFormat,
+    ldt_DateOfMaxNo,        li_StepLength,          ls_flag
+  from SYS_BILL
+  where BUSINESS_ID = as_BusinessId;
+  if sql%notfound then
+    as_billno := '';
+    li_ret := -3;
+    ls_msg := '??????????!';
+    raise e_err;
+  end if;
+
+  -- ?????
+  as_billno := nvl(ls_DisplayFormat,'');
+
+  -- ???????
+  if (to_char(ldt_DateOfMaxNo,'yyyy-mm-dd' ) = to_char(SYSDATE,'yyyy-mm-dd')) and (ls_flag = '1') then
+    ls_MinFlowNo := to_char(to_number(ls_MaxFlowNo)+li_StepLength);
+    ls_MaxFlowNo := to_char(to_number(ls_MaxFlowNo)+ai_billnos*li_StepLength);
+  else
+    ls_MinFlowNo := to_char(li_StepLength);
+    ls_MaxFlowNo := to_char(ai_billnos*li_StepLength);
+  end if;
+
+  -- ??????
+  as_billno := REPLACE(as_billno,'{yyyy}',to_char(SYSDATE,'yyyy'));
+  as_billno := REPLACE(as_billno,'{yy}',to_char(SYSDATE,'yy'));
+  as_billno := REPLACE(as_billno,'{mm}',to_char(SYSDATE,'mm'));
+  as_billno := REPLACE(as_billno,'{dd}',to_char(SYSDATE,'dd'));
+
+  li_startpos := instr(as_billno,'{0');
+  li_endpos := instr(as_billno,'0}');
+  if (li_startpos > 0 and li_endpos > 0) then
+    li_length := li_endpos - li_startpos;
+    ls_NoFormat := '{'||LPAD('0',li_length,'0')||'}';
+
+    if (LENGTH(ls_MaxFlowNo) > li_length or LENGTH(ls_MinFlowNo) > li_length) then
+      --ls_MaxFlowNo := SUBSTRING(ls_MaxFlowNo,LENGTH(ls_MaxFlowNo)-li_length+1);
+      --ls_MinFlowNo := SUBSTRING(ls_MinFlowNo,LENGTH(ls_MinFlowNo)-li_length+1);
+      li_ret := -4;
+      ls_msg := '??????????!';
+      raise e_err;
+    end if;
+
+    ls_MaxFlowNo := LPAD(ls_MaxFlowNo,li_length,'0');
+    ls_MinFlowNo := LPAD(ls_MinFlowNo,li_length,'0');
+  end if;
+
+  as_billno := REPLACE(as_billno,ls_NoFormat,ls_MinFlowNo);
+
+  update SYS_Bill set
+    Max_Bill_No = ls_MaxFlowNo,
+    Date_Of_Max_No = sysdate,
+    LockId = null
+  where BUSINESS_ID = as_BusinessId;
+  if sql%rowcount = 0 then
+    begin
+      as_billno := '';
+      li_ret := -5;
+      ls_msg := '???????!';
+      raise e_err;
+    end;
+  --else
+     --commit;
+  end if;
+
+  return;
+
+exception
+  when e_err then
+    --rollback;
+    raise_application_error( -20099 , '#' || to_char(li_ret) || '#' || ls_msg || '#' );
+
+end P_GENBILLNO
+;

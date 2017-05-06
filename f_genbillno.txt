@@ -1,0 +1,16 @@
+CREATE OR REPLACE 
+FUNCTION f_genbillno(as_bussinessid in varchar2,ai_billno in integer)
+RETURN VARCHAR2
+IS
+PRAGMA AUTONOMOUS_TRANSACTION;
+ls_genbillno varchar2 (32);
+ls_no int;
+begin
+ls_no := ai_billno;
+ if ls_no is null then
+   ls_no := 1;
+ end if;
+p_genbillno(as_bussinessid,ls_no,ls_genbillno);
+commit;
+return ls_genbillno;
+end f_genbillno;
